@@ -1,0 +1,6 @@
+{
+  "watch": ["*.js", "routes", "services", "scheduler.js", "maintenance.js", "db.js"],
+  "ext": "js,json",
+  "ignore": ["node_modules", "logs"],
+  "delay": "250"
+}

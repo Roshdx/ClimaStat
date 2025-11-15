@@ -1,0 +1,29 @@
+# backend/Dockerfile.dev
+FROM node:18-alpine
+
+# Install build tools if any native deps need compiling
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /usr/src/app
+
+# copy package files and install dev deps
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+# install nodemon globally for convenience
+RUN npm install -g nodemon
+
+# create a non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+# copy the rest (in dev we will mount local code over this)
+COPY --chown=appuser:appgroup . .
+
+ENV NODE_ENV=development
+ENV PORT=4000
+
+EXPOSE 4000
+
+# default command uses nodemon for hot-reload
+CMD ["nodemon", "--config", "nodemon.json", "index.js"]
