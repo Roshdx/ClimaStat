@@ -15,7 +15,9 @@ CREATE TABLE IF NOT EXISTS measurements_hourly (
   temperature_c REAL,
   humidity REAL,
   wind_speed REAL,
-  aqi INTEGER,
+  aqi INTEGER,               -- legacy / generic field
+  us_aqi INTEGER,            -- US EPA style AQI (provider)
+  european_aqi INTEGER,      -- European AQI (provider)
   pm2_5 REAL,
   pm10 REAL,
   raw_json JSONB,
