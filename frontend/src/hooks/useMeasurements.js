@@ -2,29 +2,51 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getLatestPerCity, getHourlyForCity, getCities, triggerFetchCity } from '../lib/api';
 
+/**
+ * NOTE: React Query v5 requires the object-style signature:
+ * useQuery({ queryKey: [...], queryFn: fn, ... })
+ */
+
 export function useCities() {
-  return useQuery(['cities'], getCities, { staleTime: 1000 * 60 * 5 });
+  return useQuery({
+    queryKey: ['cities'],
+    queryFn: getCities,
+    staleTime: 1000 * 60 * 5,
+    // keep previous data to avoid UI jank when refetching
+    keepPreviousData: true,
+    initialData: [],
+  });
 }
 
 export function useLatestAll() {
-  // latest per city: used for KPI cards and list
-  return useQuery(['latest'], getLatestPerCity, { staleTime: 1000 * 60 * 1, refetchInterval: 60 * 1000 });
+  return useQuery({
+    queryKey: ['latest'],
+    queryFn: getLatestPerCity,
+    staleTime: 1000 * 60 * 1,
+    refetchInterval: 60 * 1000,
+    initialData: [],
+  });
 }
 
+/** hourly for a given city */
 export function useHourly(cityId, hours = 72) {
-  return useQuery(['hourly', cityId, hours], () => getHourlyForCity(cityId, hours), {
+  return useQuery({
+    queryKey: ['hourly', cityId, hours],
+    queryFn: () => getHourlyForCity(cityId, hours),
     enabled: !!cityId,
     staleTime: 1000 * 30,
-    refetchInterval: 2 * 60 * 1000 // poll every 2 min (optional)
+    refetchInterval: 2 * 60 * 1000,
+    initialData: [],
   });
 }
 
 export function useTriggerFetch() {
   const qc = useQueryClient();
   return async (cityId) => {
+    if (!cityId) return;
     await triggerFetchCity(cityId);
-    // refresh latest + hourly after trigger
-    qc.invalidateQueries(['latest']);
-    qc.invalidateQueries(['hourly', cityId]);
+    // invalidate to refresh data
+    qc.invalidateQueries({ queryKey: ['latest'] });
+    qc.invalidateQueries({ queryKey: ['hourly', cityId] });
   };
 }
