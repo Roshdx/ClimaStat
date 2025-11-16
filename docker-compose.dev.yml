@@ -56,6 +56,8 @@ services:
       - "5173:5173"            # vite dev server
     environment:
       - VITE_API_BASE=http://localhost:4000
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=1000
     volumes:
       - ./frontend:/app:rw     # mount code for instant reload
       - /app/node_modules

@@ -29,29 +29,54 @@ function generateMockAqi(hours = 48) {
 function normalizeInput(raw, hoursPref = 96) {
   if (!raw) return generateMockAqi(Math.min(hoursPref, 48));
 
-  // 1) If it's already an array of objects
+    // 1) If it's already an array of objects
   if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === 'object') {
-    // If the objects have `time` or `ts` or `timestamp`
     const rows = raw
       .map(r => {
-        // try to detect open-meteo nested hourly objects that were flattened incorrectly
-        if (r && typeof r === 'object' && (r.time || r.ts || r.timestamp || r.created_at)) {
-          return {
-            ts: r.ts ?? r.time ?? r.timestamp ?? r.created_at,
-            aqi: r.us_aqi ?? r.aqi ?? null,
-            pm25: r.pm2_5 ?? r.pm25 ?? null,
-            pm10: r.pm10 ?? null,
-            raw: r.raw_json ?? null
-          };
-        }
-        return null;
+        if (!r || typeof r !== 'object') return null;
+
+        // canonical timestamp
+        const ts = r.ts ?? r.time ?? r.timestamp ?? r.created_at ?? (r.raw_json?.weather_hour?.ts ?? null);
+
+        if (!ts) return null;
+
+        // helper to safely extract nested numeric fields
+        const num = (v) => {
+          if (v === null || typeof v === 'undefined') return null;
+          // sometimes numbers come as strings; try to coerce
+          const n = Number(v);
+          return Number.isNaN(n) ? null : n;
+        };
+
+        // prefer top-level fields, fallback to raw_json.air_hour or raw_json fields
+        const aqiVal = r.us_aqi ?? r.aqi ?? r.raw_json?.air_hour?.us_aqi ?? r.raw_json?.air_hour?.aqi ?? null;
+        const pm25Val = r.pm2_5 ?? r.pm25 ?? r.raw_json?.air_hour?.pm2_5 ?? r.raw_json?.air_hour?.pm25 ?? null;
+        const pm10Val = r.pm10 ?? r.raw_json?.air_hour?.pm10 ?? null;
+
+        return {
+          ts,
+          aqi: num(aqiVal),
+          pm25: num(pm25Val),
+          pm10: num(pm10Val),
+          raw: r.raw_json ?? null
+        };
       })
       .filter(Boolean);
+
+    // ensure chronological ascending order (oldest -> newest)
+    rows.sort((a, b) => {
+      const ta = new Date(a.ts).getTime();
+      const tb = new Date(b.ts).getTime();
+      return (ta || 0) - (tb || 0);
+    });
+    console.debug('AqiChart normalized rows (first/last):', rows[0], rows[rows.length-1], 'count=', rows.length);
+
 
     if (rows.length) return rows;
     // fallback to mock
     return generateMockAqi(hoursPref);
   }
+
 
   // 2) Open-meteo style: { hourly: { time: [...], pm2_5: [...], pm10: [...], us_aqi: [...] } }
   if (raw && raw.hourly && Array.isArray(raw.hourly.time)) {

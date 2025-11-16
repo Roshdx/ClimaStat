@@ -12,11 +12,13 @@ export function useCities() {
     queryKey: ['cities'],
     queryFn: getCities,
     staleTime: 1000 * 60 * 5,
-    // keep previous data to avoid UI jank when refetching
     keepPreviousData: true,
-    initialData: [],
+    // Make sure we fetch on mount (don't rely on initialData)
+    refetchOnMount: true,
+    // initialData: [],   <-- removed
   });
 }
+
 
 export function useLatestAll() {
   return useQuery({
