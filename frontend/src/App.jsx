@@ -44,6 +44,10 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import CodeIcon from '@mui/icons-material/Code';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import AirIcon from '@mui/icons-material/Air';
+
 
 import AqiChart from './components/charts/AqiChart';
 import { useQueryClient } from "@tanstack/react-query";
@@ -143,6 +147,20 @@ const aqiCategory = (aqi) => {
   if (n <= 300) return 'Very Unhealthy';
   return 'Hazardous';
 };
+
+// determine whether AQI is "safe" or "harmful" for icon/color
+function aqiSeverity(aqi) {
+  if (aqi === null || aqi === undefined) return { level: 'Unknown', harmful: false };
+  const n = Number(aqi);
+  // treat anything > 100 as harmful (you can tune thresholds)
+  if (n <= 50) return { level: 'Good', harmful: false };
+  if (n <= 100) return { level: 'Moderate', harmful: false };
+  if (n <= 150) return { level: 'Unhealthy (Sensitive)', harmful: true };
+  if (n <= 200) return { level: 'Unhealthy', harmful: true };
+  if (n <= 300) return { level: 'Very Unhealthy', harmful: true };
+  return { level: 'Hazardous', harmful: true };
+}
+
 
 /** compute 'feels like' (apparent temp) */
 function computeFeelsLikeC(tempC, rhPct, windMs) {
@@ -377,10 +395,17 @@ export default function App() {
     const id = evt.target.value;
     setSelectedCity(id);
 
+    // invalidate hourly + latest queries so KPIs and chart refresh
     queryClient.invalidateQueries({
-      predicate: query => Array.isArray(query.queryKey) && query.queryKey[0] === 'hourly'
+      predicate: (query) =>
+        Array.isArray(query.queryKey) &&
+        (query.queryKey[0] === 'hourly' || query.queryKey[0] === 'latest' || query.queryKey[0] === 'latestAll')
     });
   };
+
+  // inline inside the AQI card render before using it:
+  const usSev = aqiSeverity(selectedLatest?.us_aqi);
+  const mainEmoji = usSev.harmful ? '😷' : '🙂';
 
   // dynamic today date string
   const todayStr = new Date().toLocaleDateString();
@@ -527,6 +552,80 @@ export default function App() {
                     </Stack>
                   </Box>
                 </Paper>
+
+                {/* AQI DETAILS CARD */}
+              {/* AQI DETAILS CARD */}
+<Paper elevation={3} sx={{ p: 2, borderRadius: 2 }}>
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Typography variant="overline" color="text.secondary">AQI DETAILS</Typography>
+    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{todayStr}</Typography>
+  </Box>
+
+  <Box sx={{ mt: 2, display: 'flex', gap: 2, alignItems: 'center' }}>
+    {/* emoji: masked if US AQI is harmful else smile */}
+    {(() => {
+      const usSev = aqiSeverity(selectedLatest?.us_aqi);
+      const emoji = usSev.harmful ? '😷' : '🙂';
+      return <Avatar sx={{ bgcolor: 'transparent', color: 'text.primary', fontSize: 20 }}>{emoji}</Avatar>;
+    })()}
+
+    <Box sx={{ flex: 1 }}>
+      <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+        <Box>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+            US AQI: {selectedLatest?.us_aqi ?? '—'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {aqiCategory(selectedLatest?.us_aqi) || '—'}
+          </Typography>
+        </Box>
+
+        <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+
+        <Box>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+            EU AQI: {selectedLatest?.european_aqi ?? '—'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {aqiCategory(selectedLatest?.european_aqi) || '—'}
+          </Typography>
+        </Box>
+      </Box>
+
+      <Box sx={{ mt: 1, display: 'flex', gap: 1, alignItems: 'center' }}>
+        {/* US severity */}
+        {(() => {
+          const us = aqiSeverity(selectedLatest?.us_aqi);
+          const Icon = us.harmful ? WarningAmberIcon : CheckCircleIcon;
+          return (
+            <Chip
+              icon={<Icon />}
+              label={`US: ${us.level}${selectedLatest?.us_aqi ? ` (${selectedLatest.us_aqi})` : ''}`}
+              size="small"
+              sx={{ bgcolor: us.harmful ? 'rgba(255,87,34,0.08)' : 'rgba(76,175,80,0.08)', color: 'text.primary' }}
+            />
+          );
+        })()}
+
+        {/* EU severity */}
+        {(() => {
+          const eu = aqiSeverity(selectedLatest?.european_aqi);
+          const Icon = eu.harmful ? WarningAmberIcon : CheckCircleIcon;
+          return (
+            <Chip
+              icon={<Icon />}
+              label={`EU: ${eu.level}${selectedLatest?.european_aqi ? ` (${selectedLatest.european_aqi})` : ''}`}
+              size="small"
+              sx={{ bgcolor: eu.harmful ? 'rgba(255,87,34,0.08)' : 'rgba(76,175,80,0.08)', color: 'text.primary' }}
+            />
+          );
+        })()}
+      </Box>
+    </Box>
+  </Box>
+</Paper>
+
+
               </Box>
 
               {/* right main chart 2/3 */}
