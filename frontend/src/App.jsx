@@ -632,7 +632,7 @@ export default function App() {
               <Box sx={{ flex: { xs: '1 1 100%', md: '0 0 66.6667%' }, maxWidth: { md: '66.6667%' }, display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden', minHeight: 460 }}>
                   <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="h6">Main Chart</Typography>
+                    <Typography variant="h6">AQI Forecast - Next 24 Hours</Typography>
                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                       <Typography variant="caption" color="text.secondary">{lastUpdated ? `Last: ${new Date(lastUpdated).toLocaleString()}` : ''}</Typography>
                       <Button variant="contained" onClick={handleRefresh} disabled={refreshing || !selectedCity}>
@@ -647,6 +647,8 @@ export default function App() {
                       data={hourlyData}
                       loading={hourlyLoading}
                       height={420}
+                      hours={24}
+                      showForecast={true}
                     />
                   </Box>
                 </Paper>

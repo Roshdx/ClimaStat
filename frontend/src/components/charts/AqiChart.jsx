@@ -8,8 +8,9 @@ import Skeleton from '@mui/material/Skeleton';
  * Props:
  *   - data: any (array of rows OR open-meteo shape OR object with arrays)
  *   - loading: boolean
- *   - hours: number (fallback/mock generator length)
+ *   - hours: number (how many hours ahead to show, default 24)
  *   - height: number (px)
+ *   - showForecast: boolean (if true, show next N hours from now; if false, show historical)
  */
 function generateMockAqi(hours = 48) {
   const now = new Date();
@@ -131,7 +132,7 @@ function normalizeInput(raw, hoursPref = 96) {
   return generateMockAqi(Math.min(hoursPref, 48));
 }
 
-export default function AqiChart({ data: raw = null, loading = false, hours = 96, height = 300 }) {
+export default function AqiChart({ data: raw = null, loading = false, hours = 24, height = 300, showForecast = true }) {
   // Loading skeleton
   if (loading) {
     return <Skeleton variant="rectangular" height={height} animation="wave" />;
@@ -145,11 +146,41 @@ export default function AqiChart({ data: raw = null, loading = false, hours = 96
     return <Skeleton variant="rectangular" height={height} animation="wave" />;
   }
 
-  // Trim to last `hours` if requested (rows expected ordered ascending by time)
-  let pts = rows;
-  if (hours && rows.length > hours) {
-    pts = rows.slice(-hours);
-  }
+  // Filter to show next N hours from current time (forecast mode)
+  // Or show last N hours (historical mode)
+  const pts = useMemo(() => {
+    const now = new Date();
+    const nowMs = now.getTime();
+
+    if (showForecast) {
+      // Show data from now to now + hours
+      const endMs = nowMs + (hours * 60 * 60 * 1000);
+
+      const filtered = rows.filter(r => {
+        const ts = new Date(r.ts).getTime();
+        return ts >= nowMs && ts <= endMs;
+      });
+
+      // Sort chronologically (oldest first for chart display)
+      filtered.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+
+      console.debug('AqiChart forecast mode: now=', now.toISOString(), 'hours=', hours, 'filtered count=', filtered.length);
+
+      return filtered.length > 0 ? filtered : rows.slice(0, hours);
+    } else {
+      // Historical mode: show last N hours
+      const startMs = nowMs - (hours * 60 * 60 * 1000);
+
+      const filtered = rows.filter(r => {
+        const ts = new Date(r.ts).getTime();
+        return ts >= startMs && ts <= nowMs;
+      });
+
+      filtered.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+
+      return filtered.length > 0 ? filtered : rows.slice(-hours);
+    }
+  }, [rows, hours, showForecast]);
 
   // build series arrays
   const times = pts.map(p => p.ts);
