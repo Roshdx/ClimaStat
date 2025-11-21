@@ -2,8 +2,8 @@
 
 ## Project Status Overview
 
-**Current Phase:** Backend Complete, Frontend Not Started
-**Development Stage:** Pre-Alpha (Backend-only)
+**Current Phase:** Full-Stack Development (Backend + Frontend operational)
+**Development Stage:** Alpha
 **Active Branch:** `development`
 **Main Branch:** `main`
 
@@ -16,17 +16,16 @@
 **Git Strategy:**
 - Main branch: `main` (production-ready code)
 - Development branch: `development` (active work)
-- Feature branches: Not currently used
+- Feature branches: Create as needed
 
 **Recent Activity:**
 ```
-3e4ea9d - sql file arrangement for docker deployment
-a62954e - mistake
-4684c11 - faslk;fa (incomplete message)
-e51eda3 - Initial backend commit - ClimaStat
+d935259 - AQI kpi card added
+3ce222d - KPI card changes + usual fixes
+c9619ec - latest changes
+e8dbd35 - general fixes and frontend docker files
+cff28cc - frontend uploaded with basic layout and dummy data
 ```
-
-**Current Status:** Clean working directory (no uncommitted changes)
 
 ---
 
@@ -47,10 +46,7 @@ cd ClimaStat
 # 2. Copy environment file
 cp .env.example .env.dev
 
-# 3. Edit environment variables (optional - defaults work)
-# Open .env.dev and modify if needed
-
-# 4. Start all services
+# 3. Start all services
 docker-compose -f docker-compose.dev.yml up --build
 ```
 
@@ -64,7 +60,7 @@ docker-compose -f docker-compose.dev.yml up
 docker-compose -f docker-compose.dev.yml up -d
 
 # View logs
-docker-compose -f docker-compose.dev.yml logs -f backend
+docker-compose -f docker-compose.dev.yml logs -f
 
 # Stop services
 docker-compose -f docker-compose.dev.yml down
@@ -81,9 +77,10 @@ When you run `docker-compose -f docker-compose.dev.yml up`, you get:
 
 | Service | URL | Purpose | Notes |
 |---------|-----|---------|-------|
+| Frontend | http://localhost:5173 | React dashboard | Hot-reload with Vite |
 | Backend API | http://localhost:4000 | Express server | Hot-reload with nodemon |
-| Adminer DB UI | http://localhost:8080 | Database management | System: PostgreSQL, Server: db |
-| PostgreSQL | localhost:5432 | Database | Not exposed in browser |
+| Adminer DB UI | http://localhost:8080 | Database management | PostgreSQL client |
+| PostgreSQL | localhost:5432 | Database | Not browser accessible |
 
 **Adminer Login Credentials:**
 ```
@@ -110,27 +107,40 @@ backend/
 └── services/         → Business logic (API fetching)
 ```
 
+**Frontend Module Structure:**
+
+```
+frontend/
+├── src/
+│   ├── App.jsx           → Main dashboard component
+│   ├── main.jsx          → React entry with React Query
+│   ├── components/       → Reusable UI components
+│   │   └── charts/       → Chart components
+│   ├── hooks/            → Custom React hooks
+│   └── lib/              → Utilities and API client
+├── vite.config.js        → Vite configuration
+└── Dockerfile.dev        → Development container
+```
+
 **Development Pattern:**
-1. Routes define HTTP endpoints (`routes/cities.js`, `routes/health.js`)
-2. Services contain business logic (`services/fetcher.js`)
-3. Scheduler manages background tasks (`scheduler.js`)
-4. Database operations use pooled connections (`db.js`)
+1. Backend routes define HTTP endpoints
+2. Backend services contain business logic
+3. Frontend hooks fetch data via React Query
+4. Frontend components render UI with Material UI
 
 ---
 
 ### 5. Making Changes
 
-**Adding a New API Endpoint:**
+#### Adding a Backend API Endpoint
 
-1. Define route in appropriate file (`routes/cities.js`)
+1. Define route in `backend/routes/cities.js`
 2. Use async/await pattern
 3. Add error handling (try/catch)
-4. Test with curl or Postman
-5. Commit changes
+4. Test with curl or frontend
 
 Example:
 ```javascript
-// backend/routes/cities.js
 router.get('/new-endpoint', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT * FROM cities');
@@ -142,54 +152,70 @@ router.get('/new-endpoint', async (req, res) => {
 });
 ```
 
-**Modifying Database Schema:**
+#### Adding a Frontend Component
 
-1. Create new SQL file in `backend/sql/` (e.g., `05_add_column.sql`)
+1. Create component in `frontend/src/components/`
+2. Use Material UI components
+3. Connect to data via hooks from `useMeasurements.js`
+4. Import and use in `App.jsx`
+
+Example:
+```jsx
+// frontend/src/components/WeatherCard.jsx
+import { Paper, Typography } from '@mui/material';
+
+export default function WeatherCard({ data }) {
+  return (
+    <Paper sx={{ p: 2 }}>
+      <Typography variant="h6">{data.temperature_c}°C</Typography>
+    </Paper>
+  );
+}
+```
+
+#### Adding a React Query Hook
+
+1. Add to `frontend/src/hooks/useMeasurements.js`
+2. Configure caching strategy
+3. Export and use in components
+
+Example:
+```javascript
+export function useNewData(id) {
+  return useQuery({
+    queryKey: ['newData', id],
+    queryFn: () => api.getNewData(id),
+    staleTime: 60_000,
+    enabled: !!id,
+  });
+}
+```
+
+#### Modifying Database Schema
+
+1. Create new SQL file in `backend/sql/`
 2. Stop containers: `docker-compose -f docker-compose.dev.yml down -v`
 3. Restart to apply: `docker-compose -f docker-compose.dev.yml up --build`
-4. Note: Volume removal (`-v`) wipes existing data
 
 **Alternative (without volume removal):**
 ```bash
-# Connect to DB container
 docker exec -it climastat-db-1 psql -U postgres
-
-# Run SQL manually
 ALTER TABLE cities ADD COLUMN IF NOT EXISTS region TEXT;
-```
-
-**Adding a New City:**
-
-Option 1: Via API (POST request)
-```bash
-curl -X POST http://localhost:4000/api/cities \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Goa","lat":15.2993,"lon":74.1240}'
-```
-
-Option 2: Via Adminer UI
-1. Open http://localhost:8080
-2. Navigate to `cities` table
-3. Click "New item"
-4. Fill form and save
-
-Option 3: Add to default list (`backend/scheduler.js:6-27`)
-
-**Modifying Fetch Schedule:**
-
-Edit `backend/scheduler.js`:
-```javascript
-// Change from every 20 minutes to every 10 minutes
-cron.schedule('*/10 * * * *', async () => {
-  // fetch logic
-});
 ```
 
 ---
 
 ### 6. Testing Changes
 
-**Manual API Testing:**
+#### Frontend Testing
+
+1. Open http://localhost:5173
+2. Use browser DevTools (F12)
+3. Check Network tab for API calls
+4. Use React DevTools extension
+5. Check Console for errors
+
+#### Backend API Testing
 
 ```bash
 # Health check
@@ -202,126 +228,100 @@ curl http://localhost:4000/api/cities
 curl http://localhost:4000/api/cities/latest
 
 # Get hourly data for city ID 1
-curl http://localhost:4000/api/cities/1/hourly
+curl "http://localhost:4000/api/cities/1/hourly?hours=96"
 
-# Trigger manual fetch for city ID 1
+# Trigger manual fetch
 curl -X POST http://localhost:4000/api/cities/1/fetch
 ```
 
-**Database Verification:**
+#### Database Verification
 
 1. Open Adminer: http://localhost:8080
 2. Login with credentials above
-3. Click `measurements_hourly` table
-4. Click "Select data"
-5. Verify recent timestamps
+3. Check `measurements_hourly` table
+4. Verify recent timestamps
 
-**Log Monitoring:**
+#### Log Monitoring
 
 ```bash
-# Follow backend logs in real-time
+# All services
+docker-compose -f docker-compose.dev.yml logs -f
+
+# Frontend only
+docker-compose -f docker-compose.dev.yml logs -f frontend-dev
+
+# Backend only
 docker-compose -f docker-compose.dev.yml logs -f backend
 
 # Check for errors
-docker-compose -f docker-compose.dev.yml logs backend | grep -i error
-
-# View scheduler activity
-docker-compose -f docker-compose.dev.yml logs backend | grep -i cron
+docker-compose -f docker-compose.dev.yml logs | grep -i error
 ```
 
 ---
 
 ### 7. Debugging Tips
 
-**Backend not starting:**
-```bash
-# Check if port 4000 is already in use
-netstat -ano | findstr :4000   # Windows
-lsof -i :4000                  # Mac/Linux
+#### Frontend Issues
 
-# Rebuild containers
-docker-compose -f docker-compose.dev.yml up --build --force-recreate
-```
+**Component not updating:**
+- Check React Query devtools
+- Verify query key matches
+- Check stale time settings
+- Force refetch with invalidateQueries
+
+**Styling issues:**
+- Check MUI theme configuration
+- Verify sx prop syntax
+- Check responsive breakpoints
+
+**API call failures:**
+- Check Network tab in DevTools
+- Verify VITE_API_BASE is correct
+- Check CORS configuration
+
+#### Backend Issues
 
 **Database connection errors:**
 ```bash
-# Check DB health
 docker-compose -f docker-compose.dev.yml ps
-
-# View DB logs
 docker-compose -f docker-compose.dev.yml logs db
-
-# Manually test connection
 docker exec -it climastat-db-1 pg_isready -U postgres
 ```
 
 **Scheduler not running:**
-- Check backend logs for "Scheduler started" message
+- Check backend logs for "Scheduler started"
 - Look for cron execution messages
-- Verify no startup errors
 
 **API fetch failures:**
 - Check internet connectivity
-- Verify Open-Meteo API is accessible
-- Look for 429 (rate limit) or timeout errors
+- Look for rate limit (429) errors
 - Check retry logic in logs
 
-**Hot-reload not working:**
-- Verify volume mount in docker-compose.dev.yml
-- Check nodemon.json configuration
-- Restart backend service: `docker-compose -f docker-compose.dev.yml restart backend`
+#### Docker Issues
 
----
-
-### 8. Database Maintenance
-
-**View Current Data:**
-```sql
--- Count measurements per city
-SELECT c.name, COUNT(m.id) AS measurement_count
-FROM cities c
-LEFT JOIN measurements_hourly m ON m.city_id = c.id
-GROUP BY c.name
-ORDER BY measurement_count DESC;
-
--- Check data freshness
-SELECT c.name, MAX(m.ts) AS latest_measurement
-FROM cities c
-LEFT JOIN measurements_hourly m ON m.city_id = c.id
-GROUP BY c.name
-ORDER BY latest_measurement DESC;
-
--- View materialized view
-SELECT * FROM latest_measurement_per_city LIMIT 10;
-```
-
-**Manual Maintenance Tasks:**
-
+**Port already in use:**
 ```bash
-# Enter DB container
-docker exec -it climastat-db-1 psql -U postgres
+# Windows
+netstat -ano | findstr :5173
+netstat -ano | findstr :4000
 
-# Refresh materialized view manually
-REFRESH MATERIALIZED VIEW CONCURRENTLY latest_measurement_per_city;
+# Linux/Mac
+lsof -i :5173
+lsof -i :4000
+```
 
-# Run retention cleanup manually (30 days)
-DELETE FROM measurements_hourly WHERE ts < now() - INTERVAL '30 days';
-
-# Check table sizes
-SELECT
-  schemaname,
-  tablename,
-  pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size
-FROM pg_tables
-WHERE schemaname = 'public'
-ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
+**Hot-reload not working:**
+```bash
+# Restart specific service
+docker-compose -f docker-compose.dev.yml restart frontend-dev
+docker-compose -f docker-compose.dev.yml restart backend
 ```
 
 ---
 
-### 9. Environment Variables
+### 8. Environment Variables
 
-**Current Configuration (.env.dev):**
+**Configuration (.env.dev):**
 
 ```env
 # Database
@@ -341,107 +341,39 @@ ADMINER_PORT=8080
 DATABASE_URL=postgres://postgres:postgres@db:5432/postgres
 ```
 
-**Changing Variables:**
-1. Edit `.env.dev` file
-2. Restart services: `docker-compose -f docker-compose.dev.yml down && docker-compose -f docker-compose.dev.yml up`
-3. Note: Some variables require rebuild (`--build` flag)
+**Frontend Environment (set in docker-compose.dev.yml):**
+```env
+VITE_API_BASE=http://localhost:4000
+```
 
 ---
 
-### 10. Code Quality Practices
+### 9. Code Quality Practices
 
 **Current Standards:**
 
-- ✅ Use async/await (no raw promises)
-- ✅ Wrap DB operations in try/catch
-- ✅ Use parameterized queries (prevent SQL injection)
-- ✅ Release DB clients in finally blocks
-- ✅ Log errors with descriptive messages
-- ✅ Use transactions for batch inserts
-- ✅ Follow REST conventions for routes
+- Use async/await (no raw promises)
+- Wrap DB operations in try/catch
+- Use parameterized queries (prevent SQL injection)
+- Release DB clients in finally blocks
+- Use React Query for server state
+- Use Material UI components consistently
+- Follow REST conventions for routes
+
+**Implemented:**
+- ESLint for frontend
+- Nodemon for backend hot-reload
+- Vite HMR for frontend
 
 **Not Implemented Yet:**
-- ❌ ESLint configuration
-- ❌ Prettier formatting
-- ❌ Unit tests
-- ❌ Integration tests
-- ❌ Code coverage tools
-- ❌ Pre-commit hooks
+- Unit tests
+- Integration tests
+- Pre-commit hooks
+- TypeScript
 
 ---
 
-### 11. Branching Strategy (Proposed)
-
-**Current:** Direct commits to `development`
-
-**Recommended for Team Development:**
-```
-main (production)
-  ↑
-development (staging)
-  ↑
-feature/weather-alerts
-feature/daily-aggregation
-bugfix/timezone-issue
-```
-
-**Workflow:**
-1. Create feature branch from `development`
-2. Make changes and commit
-3. Test locally
-4. Merge back to `development`
-5. Periodically merge `development` → `main`
-
----
-
-### 12. Deployment Process (Future)
-
-**Not Yet Implemented:**
-
-The project currently only supports local Docker development. For production deployment, you'll need:
-
-1. Production Dockerfile (without dev tools)
-2. Environment-specific configs
-3. Managed PostgreSQL (AWS RDS, Azure Database, etc.)
-4. Hosting platform (Render, Railway, AWS ECS, etc.)
-5. CI/CD pipeline (GitHub Actions, GitLab CI, etc.)
-6. Monitoring/logging (Datadog, Sentry, etc.)
-
-See `deployment_steps.md` for detailed Docker deployment instructions.
-
----
-
-### 13. Next Steps (Development Roadmap)
-
-**Backend Tasks:**
-- [ ] Implement AQI fetching (requires different API or endpoint)
-- [ ] Add daily aggregation cron job
-- [ ] Create alert triggering logic
-- [ ] Add input validation middleware
-- [ ] Implement rate limiting
-- [ ] Add authentication (optional)
-- [ ] Write unit tests
-
-**Frontend Tasks (Not Started):**
-- [ ] Initialize React + Vite project
-- [ ] Create city dashboard component
-- [ ] Implement weather charts (Recharts)
-- [ ] Add city search/filter
-- [ ] Build responsive layout
-- [ ] Connect to backend API
-- [ ] Deploy to Vercel/Netlify
-
-**DevOps Tasks:**
-- [ ] Create production Dockerfile
-- [ ] Set up GitHub Actions CI/CD
-- [ ] Configure production environment
-- [ ] Set up monitoring/alerts
-- [ ] Implement automated backups
-- [ ] Add health checks and metrics
-
----
-
-### 14. Common Development Commands
+### 10. Common Development Commands
 
 **Docker:**
 ```bash
@@ -457,8 +389,8 @@ docker-compose -f docker-compose.dev.yml down
 # Clean restart (removes data)
 docker-compose -f docker-compose.dev.yml down -v && docker-compose -f docker-compose.dev.yml up --build
 
-# View logs
-docker-compose -f docker-compose.dev.yml logs -f
+# Shell into frontend container
+docker exec -it climastat-frontend-dev-1 sh
 
 # Shell into backend container
 docker exec -it climastat-backend-1 sh
@@ -467,12 +399,17 @@ docker exec -it climastat-backend-1 sh
 docker exec -it climastat-db-1 psql -U postgres
 ```
 
-**NPM (if running locally without Docker):**
+**NPM (if running locally):**
 ```bash
+# Backend
 cd backend
 npm install
-npm run dev    # Uses nodemon
-npm start      # Production mode
+npm run dev
+
+# Frontend
+cd frontend
+npm install
+npm run dev
 ```
 
 **Git:**
@@ -489,47 +426,108 @@ git push origin feature/new-feature
 
 # Switch back to development
 git checkout development
-
-# Merge feature
-git merge feature/new-feature
 ```
 
 ---
 
-### 15. Troubleshooting Guide
+### 11. Frontend-Specific Development
+
+**Adding a New Chart:**
+
+1. Create component in `frontend/src/components/charts/`
+2. Import ECharts and configure options
+3. Add to dashboard in `App.jsx`
+
+Example:
+```jsx
+// frontend/src/components/charts/TempChart.jsx
+import ReactECharts from 'echarts-for-react';
+
+export default function TempChart({ data }) {
+  const option = {
+    xAxis: { type: 'time' },
+    yAxis: { type: 'value' },
+    series: [{
+      type: 'line',
+      data: data.map(d => [d.ts, d.temperature_c])
+    }]
+  };
+  return <ReactECharts option={option} />;
+}
+```
+
+**Modifying Theme:**
+
+Edit theme configuration in `frontend/src/App.jsx`:
+```javascript
+const theme = createTheme({
+  palette: {
+    mode: 'light', // or 'dark'
+    primary: { main: '#1976d2' },
+    secondary: { main: '#00acc1' },
+  },
+});
+```
+
+**Adding API Endpoint to Frontend:**
+
+1. Add method to `frontend/src/lib/api.js`
+2. Create hook in `frontend/src/hooks/useMeasurements.js`
+3. Use hook in component
+
+---
+
+### 12. Troubleshooting Guide
 
 | Problem | Solution |
 |---------|----------|
-| "Port 4000 already in use" | Kill process on port 4000 or change BACKEND_PORT in .env.dev |
-| "Cannot connect to database" | Check DB container is healthy: `docker-compose ps` |
-| "No data in database" | Trigger manual fetch: `curl -X POST http://localhost:4000/api/cities/1/fetch` |
-| "Nodemon not reloading" | Check volume mount exists, restart backend container |
-| "SQL syntax error on startup" | Check SQL files in `backend/sql/` for syntax |
-| "Out of disk space" | Clean Docker: `docker system prune -a --volumes` |
-| "Stale materialized view" | Wait for cron or refresh manually in Adminer |
+| "Port 5173 already in use" | Kill process or change port in docker-compose |
+| "Port 4000 already in use" | Kill process or change BACKEND_PORT |
+| "Cannot connect to database" | Check DB container: `docker-compose ps` |
+| "No data in dashboard" | Wait for initial fetch or trigger manually |
+| "Vite not reloading" | Restart frontend-dev container |
+| "Nodemon not reloading" | Restart backend container |
+| "CORS errors" | Check backend CORS config and VITE_API_BASE |
+| "Query not refetching" | Check stale time and query key |
 
 ---
 
-## Development Best Practices
+### 13. Next Steps (Development Roadmap)
 
-1. **Always use parameterized queries** - Prevents SQL injection
-2. **Release DB clients** - Prevents connection leaks
-3. **Use transactions for batch operations** - Ensures atomicity
-4. **Log meaningful errors** - Aids debugging
-5. **Test endpoints after changes** - Catch issues early
-6. **Commit often with clear messages** - Enables easy rollback
-7. **Check logs regularly** - Spot issues before they escalate
-8. **Keep .env files out of git** - Security best practice
+**Frontend Tasks:**
+- [ ] Add temperature trend chart
+- [ ] Add humidity/wind charts
+- [ ] Implement city comparison view
+- [ ] Add data export functionality
+- [ ] Improve mobile responsiveness
+- [ ] Add loading skeletons
+
+**Backend Tasks:**
+- [ ] Implement daily aggregation cron
+- [ ] Create alert triggering logic
+- [ ] Add input validation middleware
+- [ ] Implement rate limiting
+- [ ] Add authentication
+
+**DevOps Tasks:**
+- [ ] Create production Dockerfiles
+- [ ] Set up GitHub Actions CI/CD
+- [ ] Configure production environment
+- [ ] Set up monitoring/alerts
+- [ ] Implement automated backups
 
 ---
 
-## Resources
+### 14. Resources
 
 **Documentation:**
 - Open-Meteo API: https://open-meteo.com/en/docs
 - PostgreSQL Docs: https://www.postgresql.org/docs/15/
 - Express.js Guide: https://expressjs.com/
-- Node.js Cron: https://www.npmjs.com/package/node-cron
+- React Query: https://tanstack.com/query/latest
+- Material UI: https://mui.com/material-ui/
+- ECharts: https://echarts.apache.org/
+- Vite: https://vitejs.dev/
 
 **Project Files:**
 - `README.md` - Project overview and quick start
@@ -538,4 +536,4 @@ git merge feature/new-feature
 
 ---
 
-*Last Updated: 2025-01-16*
+*Last Updated: 2025-11-21*

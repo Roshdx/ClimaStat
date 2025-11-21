@@ -1,6 +1,6 @@
 # ClimaStat - Docker Deployment Guide
 
-This guide covers deploying ClimaStat using Docker and Docker Compose in both development and production environments.
+This guide covers deploying the full ClimaStat stack (Backend + Frontend + Database) using Docker and Docker Compose.
 
 ---
 
@@ -8,14 +8,14 @@ This guide covers deploying ClimaStat using Docker and Docker Compose in both de
 
 1. [Prerequisites](#prerequisites)
 2. [Development Deployment](#development-deployment)
-3. [Production Deployment (Future)](#production-deployment-future)
+3. [Service Architecture](#service-architecture)
 4. [Environment Configuration](#environment-configuration)
 5. [Database Initialization](#database-initialization)
 6. [Service Management](#service-management)
 7. [Monitoring & Logs](#monitoring--logs)
 8. [Backup & Restore](#backup--restore)
 9. [Troubleshooting](#troubleshooting)
-10. [Security Considerations](#security-considerations)
+10. [Production Deployment (Future)](#production-deployment-future)
 
 ---
 
@@ -48,13 +48,13 @@ docker ps
 
 **Minimum:**
 - 2 CPU cores
-- 2 GB RAM
-- 5 GB free disk space
+- 4 GB RAM
+- 10 GB free disk space
 
 **Recommended:**
 - 4 CPU cores
-- 4 GB RAM
-- 20 GB free disk space (for logs and data retention)
+- 8 GB RAM
+- 20 GB free disk space
 
 ---
 
@@ -63,11 +63,10 @@ docker ps
 ### Step 1: Clone Repository
 
 ```bash
-# Clone the repository
 git clone <repository-url> ClimaStat
 cd ClimaStat
 
-# Switch to development branch (if not already)
+# Switch to development branch
 git checkout development
 ```
 
@@ -78,7 +77,6 @@ git checkout development
 cp .env.example .env.dev
 
 # Optional: Edit environment variables
-# Use your preferred text editor
 notepad .env.dev    # Windows
 nano .env.dev       # Linux/Mac
 code .env.dev       # VS Code
@@ -99,11 +97,11 @@ DB_SSL=false
 # Adminer Database UI
 ADMINER_PORT=8080
 
-# Database Connection URL (auto-configured for Docker)
+# Database Connection URL
 DATABASE_URL=postgres://postgres:postgres@db:5432/postgres
 ```
 
-### Step 3: Start Services
+### Step 3: Start All Services
 
 ```bash
 # Start all services with build
@@ -113,188 +111,49 @@ docker-compose -f docker-compose.dev.yml up --build
 docker-compose -f docker-compose.dev.yml up -d --build
 ```
 
-**What happens during startup:**
+### Step 4: Access the Application
 
-1. **Database Container (db):**
-   - Pulls `postgres:15` image
-   - Creates persistent volume `pgdata_dev`
-   - Executes SQL files from `backend/sql/` directory in order:
-     - `01_create_schema.sql` → Creates tables and indexes
-     - `02_create_mat_view.sql` → Creates materialized view
-     - `03_refresh_mat_view.sql` → Initial view refresh
-     - `04_retention.sql` → (Not auto-executed, manual script)
-   - Runs health check every 5 seconds
+| Service | URL | Purpose |
+|---------|-----|---------|
+| **Frontend Dashboard** | http://localhost:5173 | React application |
+| **Backend API** | http://localhost:4000 | Express REST API |
+| **Adminer** | http://localhost:8080 | Database management UI |
+| **Health Check** | http://localhost:4000/health | API health status |
 
-2. **Backend Container (backend):**
-   - Builds custom image from `backend/Dockerfile.dev`
-   - Installs Node.js dependencies
-   - Waits for database health check to pass
-   - Starts Express server on port 4000
-   - Mounts local `backend/` folder for hot-reload
-   - Runs `nodemon index.js` for auto-restart on file changes
-
-3. **Scheduler Initialization:**
-   - Syncs default city list (20 Indian cities)
-   - Performs initial fetch for all cities (takes ~30 seconds)
-   - Starts cron jobs:
-     - Weather fetch every 20 minutes
-     - Materialized view refresh every 5 minutes
-     - Data retention daily at 03:10 UTC
-
-4. **Adminer Container (adminer):**
-   - Pulls `adminer:latest` image
-   - Provides web-based database UI on port 8080
-
-### Step 4: Verify Deployment
-
-**Check container status:**
-```bash
-docker-compose -f docker-compose.dev.yml ps
+**Adminer Login:**
 ```
-
-Expected output:
-```
-NAME                  STATUS              PORTS
-climastat-db-1        Up (healthy)        0.0.0.0:5432->5432/tcp
-climastat-backend-1   Up (healthy)        0.0.0.0:4000->4000/tcp
-climastat-adminer-1   Up                  0.0.0.0:8080->8080/tcp
-```
-
-**Test endpoints:**
-```bash
-# Health check
-curl http://localhost:4000/health
-# Expected: {"status":"ok","db":"ok","time":"2025-01-16T..."}
-
-# List cities
-curl http://localhost:4000/api/cities
-# Expected: JSON array with 20 cities
-
-# Get latest measurements (after initial fetch completes)
-curl http://localhost:4000/api/cities/latest
-# Expected: JSON array with latest weather data
-```
-
-**Access Adminer UI:**
-1. Open browser: http://localhost:8080
-2. Login with:
-   - System: `PostgreSQL`
-   - Server: `db`
-   - Username: `postgres`
-   - Password: `postgres`
-   - Database: `postgres`
-3. Navigate to tables to view data
-
-### Step 5: Monitor Logs
-
-```bash
-# View all logs
-docker-compose -f docker-compose.dev.yml logs -f
-
-# View only backend logs
-docker-compose -f docker-compose.dev.yml logs -f backend
-
-# View only database logs
-docker-compose -f docker-compose.dev.yml logs -f db
-
-# Search logs for errors
-docker-compose -f docker-compose.dev.yml logs | grep -i error
-```
-
-**Key log messages to look for:**
-
-```
-backend-1  | Backend running on 4000
-backend-1  | syncCities result: { active_count: '20', total: '20' }
-backend-1  | initialFetchAll: fetching 20 cities
-backend-1  | Upserted 180 rows for Mumbai
-backend-1  | Scheduler started
-backend-1  | Maintenance scheduled: retention daily, materialized view refresh every 5 minutes
+System: PostgreSQL
+Server: db
+Username: postgres
+Password: postgres
+Database: postgres
 ```
 
 ---
 
-## Production Deployment (Future)
+## Service Architecture
 
-**Note:** Production deployment is not yet configured. The current setup is development-only.
+### Docker Compose Services
 
-### Planned Production Setup
+| Service | Image | Port | Dependencies | Purpose |
+|---------|-------|------|--------------|---------|
+| `db` | postgres:15 | 5432 | None | PostgreSQL database |
+| `backend` | Custom (Node 18) | 4000 | db (healthy) | Express API + Scheduler |
+| `frontend-dev` | Custom (Node 22) | 5173 | backend (healthy) | Vite dev server |
+| `adminer` | adminer:latest | 8080 | db | Database UI |
 
-**Required Files (Not Yet Created):**
-- `docker-compose.prod.yml` - Production orchestration
-- `backend/Dockerfile` - Production-optimized image
-- `.env.prod` - Production environment variables
+### Service Startup Order
 
-**Production Checklist:**
+1. **db** - PostgreSQL starts first
+2. **backend** - Waits for db health check
+3. **frontend-dev** - Waits for backend health check
+4. **adminer** - Starts after db
 
-- [ ] Create production Dockerfile without dev dependencies
-- [ ] Remove nodemon, use `node index.js` directly
-- [ ] Configure reverse proxy (Nginx/Caddy)
-- [ ] Use managed PostgreSQL (AWS RDS, Azure Database, etc.)
-- [ ] Set up SSL/TLS certificates
-- [ ] Configure environment-specific secrets
-- [ ] Implement health monitoring (Prometheus/Datadog)
-- [ ] Set up log aggregation (ELK stack, CloudWatch)
-- [ ] Configure automated backups
-- [ ] Implement CI/CD pipeline (GitHub Actions)
-- [ ] Set up staging environment
+### Network Configuration
 
-**Example Production Dockerfile (Future):**
-
-```dockerfile
-# backend/Dockerfile (production)
-FROM node:18-alpine AS build
-
-WORKDIR /usr/src/app
-
-COPY package*.json ./
-RUN npm ci --only=production
-
-COPY . .
-
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-USER appuser
-
-ENV NODE_ENV=production
-ENV PORT=4000
-
-EXPOSE 4000
-
-CMD ["node", "index.js"]
-```
-
-**Example Production Docker Compose (Future):**
-
-```yaml
-# docker-compose.prod.yml
-version: '3.8'
-
-services:
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    restart: always
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      DB_SSL: "true"
-      PORT: 4000
-      NODE_ENV: production
-    ports:
-      - "4000:4000"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:4000/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    deploy:
-      replicas: 2
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
-```
+All services communicate on the `climastat-net` bridge network:
+- Frontend calls backend at `http://localhost:4000` (via host)
+- Backend calls database at `db:5432` (via Docker network)
 
 ---
 
@@ -311,52 +170,56 @@ services:
 | `POSTGRES_DB` | postgres | Database name |
 | `POSTGRES_PORT` | 5432 | Database port |
 | `BACKEND_PORT` | 4000 | Express server port |
-| `DB_SSL` | false | Enable SSL for DB connection |
+| `DB_SSL` | false | Enable SSL for DB |
 | `ADMINER_PORT` | 8080 | Adminer web UI port |
 | `DATABASE_URL` | postgres://... | Full connection string |
+
+### Frontend Environment (docker-compose.dev.yml)
+
+| Variable | Value | Description |
+|----------|-------|-------------|
+| `VITE_API_BASE` | http://localhost:4000 | Backend API URL |
+| `CHOKIDAR_USEPOLLING` | true | File watch for Docker |
+| `CHOKIDAR_INTERVAL` | 1000 | Polling interval (ms) |
 
 ### Customizing Ports
 
 If ports are already in use, modify `.env.dev`:
 
 ```env
-# Change backend port
 BACKEND_PORT=5000
-
-# Change database port
 POSTGRES_PORT=5433
-
-# Change Adminer port
 ADMINER_PORT=9090
 ```
 
-Then restart services:
-```bash
-docker-compose -f docker-compose.dev.yml down
-docker-compose -f docker-compose.dev.yml up
-```
-
-### SSL Configuration (Production)
-
-For managed databases (AWS RDS, Azure, etc.):
-
-```env
-DB_SSL=true
-DATABASE_URL=postgres://user:pass@managed-db-host:5432/dbname?sslmode=require
+For frontend port, edit `docker-compose.dev.yml`:
+```yaml
+frontend-dev:
+  ports:
+    - "3000:5173"  # Change 3000 to desired port
 ```
 
 ---
 
 ## Database Initialization
 
-### Automatic Initialization (First Run)
+### Automatic Initialization
 
-On first startup, PostgreSQL automatically executes all `.sql` files in `backend/sql/` directory (mounted as `/docker-entrypoint-initdb.d/`):
+On first startup, PostgreSQL executes SQL files from `backend/sql/`:
 
-1. **01_create_schema.sql** - Creates all tables and indexes
-2. **02_create_mat_view.sql** - Creates materialized view for performance
-3. **03_refresh_mat_view.sql** - Initial view refresh
-4. **04_retention.sql** - Not auto-executed (manual cleanup script)
+1. **01_create_schema.sql** - Tables and indexes
+2. **02_create_mat_view.sql** - Materialized view
+
+### Backend Initialization
+
+After database is healthy, backend:
+
+1. Syncs default city list (20 Indian cities)
+2. Performs initial fetch for all cities (~30 seconds)
+3. Starts cron jobs:
+   - Weather fetch: every 20 minutes
+   - Mat view refresh: every 5 minutes
+   - Data retention: daily at 03:10 UTC
 
 ### Manual Re-initialization
 
@@ -366,13 +229,11 @@ On first startup, PostgreSQL automatically executes all `.sql` files in `backend
 # Stop and remove containers + volumes
 docker-compose -f docker-compose.dev.yml down -v
 
-# Start fresh (re-runs SQL initialization)
+# Start fresh
 docker-compose -f docker-compose.dev.yml up --build
 ```
 
-### Selective Schema Updates
-
-To update schema without losing data:
+### Schema Updates (Without Data Loss)
 
 ```bash
 # Connect to database
@@ -383,16 +244,6 @@ ALTER TABLE cities ADD COLUMN IF NOT EXISTS region TEXT;
 \q
 ```
 
-Or create migration files:
-
-```bash
-# Create new migration
-echo "ALTER TABLE cities ADD COLUMN region TEXT;" > backend/sql/05_add_region.sql
-
-# Apply manually
-docker exec -i climastat-db-1 psql -U postgres < backend/sql/05_add_region.sql
-```
-
 ---
 
 ## Service Management
@@ -400,50 +251,55 @@ docker exec -i climastat-db-1 psql -U postgres < backend/sql/05_add_region.sql
 ### Starting Services
 
 ```bash
-# Start all services (foreground)
+# Start all (foreground)
 docker-compose -f docker-compose.dev.yml up
 
-# Start in background (detached)
+# Start all (background)
 docker-compose -f docker-compose.dev.yml up -d
 
 # Start with rebuild
 docker-compose -f docker-compose.dev.yml up --build
 
 # Start specific service
-docker-compose -f docker-compose.dev.yml up backend
+docker-compose -f docker-compose.dev.yml up frontend-dev
 ```
 
 ### Stopping Services
 
 ```bash
-# Stop all services (keeps containers)
+# Stop (keeps containers)
 docker-compose -f docker-compose.dev.yml stop
 
 # Stop and remove containers (keeps volumes)
 docker-compose -f docker-compose.dev.yml down
 
-# Stop and remove everything including volumes (DATA LOSS!)
+# Stop and remove everything (DATA LOSS!)
 docker-compose -f docker-compose.dev.yml down -v
 ```
 
 ### Restarting Services
 
 ```bash
-# Restart all services
+# Restart all
 docker-compose -f docker-compose.dev.yml restart
 
 # Restart specific service
+docker-compose -f docker-compose.dev.yml restart frontend-dev
 docker-compose -f docker-compose.dev.yml restart backend
 
 # Rebuild and restart
 docker-compose -f docker-compose.dev.yml up -d --build --force-recreate
 ```
 
-### Scaling (Future - Production)
+### Rebuilding After Changes
 
 ```bash
-# Run multiple backend instances
-docker-compose -f docker-compose.prod.yml up -d --scale backend=3
+# After package.json changes
+docker-compose -f docker-compose.dev.yml up --build
+
+# Force rebuild without cache
+docker-compose -f docker-compose.dev.yml build --no-cache
+docker-compose -f docker-compose.dev.yml up
 ```
 
 ---
@@ -453,29 +309,31 @@ docker-compose -f docker-compose.prod.yml up -d --scale backend=3
 ### Viewing Logs
 
 ```bash
-# View all logs (live)
+# All services (live)
 docker-compose -f docker-compose.dev.yml logs -f
 
-# View logs for specific service
+# Specific service
+docker-compose -f docker-compose.dev.yml logs -f frontend-dev
 docker-compose -f docker-compose.dev.yml logs -f backend
+docker-compose -f docker-compose.dev.yml logs -f db
 
-# View last 100 lines
+# Last 100 lines
 docker-compose -f docker-compose.dev.yml logs --tail=100 backend
 
-# View logs since specific time
-docker-compose -f docker-compose.dev.yml logs --since 2025-01-16T10:00:00 backend
+# Filter for errors
+docker-compose -f docker-compose.dev.yml logs | grep -i error
 ```
 
 ### Container Status
 
 ```bash
-# List running containers
+# List containers
 docker-compose -f docker-compose.dev.yml ps
 
-# View resource usage
+# Resource usage
 docker stats
 
-# Inspect specific container
+# Inspect container
 docker inspect climastat-backend-1
 ```
 
@@ -484,39 +342,34 @@ docker inspect climastat-backend-1
 **Backend Health:**
 ```bash
 curl http://localhost:4000/health
+# Expected: {"status":"ok","db":"ok","time":"..."}
 ```
 
 **Database Health:**
 ```bash
 docker exec climastat-db-1 pg_isready -U postgres
-# Expected: /var/run/postgresql:5432 - accepting connections
+# Expected: accepting connections
 ```
 
-### Database Monitoring Queries
+**Frontend Health:**
+- Open http://localhost:5173
+- Check browser console for errors
 
-```bash
-# Connect to database
-docker exec -it climastat-db-1 psql -U postgres
+### Key Log Messages
 
-# Check data counts
-SELECT
-  (SELECT COUNT(*) FROM cities) AS cities,
-  (SELECT COUNT(*) FROM measurements_hourly) AS hourly_measurements,
-  (SELECT COUNT(*) FROM measurements_daily) AS daily_measurements;
+**Backend startup (healthy):**
+```
+backend-1  | Backend running on 4000
+backend-1  | syncCities result: { active_count: '20' }
+backend-1  | initialFetchAll: fetching 20 cities
+backend-1  | Upserted 180 rows for Mumbai
+backend-1  | Scheduler started
+```
 
-# Check latest data timestamp
-SELECT MAX(ts) AS latest_measurement FROM measurements_hourly;
-
-# View table sizes
-SELECT
-  tablename,
-  pg_size_pretty(pg_total_relation_size('public.' || tablename)) AS size
-FROM pg_tables
-WHERE schemaname = 'public'
-ORDER BY pg_total_relation_size('public.' || tablename) DESC;
-
-# Active connections
-SELECT count(*) FROM pg_stat_activity;
+**Frontend startup (healthy):**
+```
+frontend-dev-1  | VITE v7.2.2  ready in 500 ms
+frontend-dev-1  |   Local:   http://localhost:5173/
 ```
 
 ---
@@ -525,22 +378,35 @@ SELECT count(*) FROM pg_stat_activity;
 
 ### Database Backup
 
-**Full backup:**
 ```bash
-# Backup to file
+# Full backup
 docker exec climastat-db-1 pg_dump -U postgres postgres > backup_$(date +%Y%m%d_%H%M%S).sql
 
-# Backup with compression
-docker exec climastat-db-1 pg_dump -U postgres postgres | gzip > backup_$(date +%Y%m%d_%H%M%S).sql.gz
+# Compressed backup
+docker exec climastat-db-1 pg_dump -U postgres postgres | gzip > backup.sql.gz
+
+# Table-specific
+docker exec climastat-db-1 pg_dump -U postgres -t measurements_hourly postgres > measurements.sql
 ```
 
-**Table-specific backup:**
+### Database Restore
+
 ```bash
-# Backup only measurements
-docker exec climastat-db-1 pg_dump -U postgres -t measurements_hourly postgres > measurements_backup.sql
+# Stop backend
+docker-compose -f docker-compose.dev.yml stop backend frontend-dev
+
+# Restore
+docker exec -i climastat-db-1 psql -U postgres postgres < backup.sql
+
+# Or from compressed
+gunzip -c backup.sql.gz | docker exec -i climastat-db-1 psql -U postgres postgres
+
+# Restart services
+docker-compose -f docker-compose.dev.yml start backend frontend-dev
 ```
 
-**Automated backup script:**
+### Automated Backup Script
+
 ```bash
 #!/bin/bash
 # backup.sh
@@ -548,52 +414,6 @@ BACKUP_DIR="./backups"
 mkdir -p $BACKUP_DIR
 docker exec climastat-db-1 pg_dump -U postgres postgres | gzip > "$BACKUP_DIR/climastat_$(date +%Y%m%d_%H%M%S).sql.gz"
 find $BACKUP_DIR -name "*.sql.gz" -mtime +7 -delete  # Keep 7 days
-```
-
-### Database Restore
-
-**From SQL file:**
-```bash
-# Stop backend to prevent conflicts
-docker-compose -f docker-compose.dev.yml stop backend
-
-# Restore
-docker exec -i climastat-db-1 psql -U postgres postgres < backup.sql
-
-# Or from gzipped backup
-gunzip -c backup.sql.gz | docker exec -i climastat-db-1 psql -U postgres postgres
-
-# Restart backend
-docker-compose -f docker-compose.dev.yml start backend
-```
-
-**Complete database reset with backup:**
-```bash
-# Backup first
-docker exec climastat-db-1 pg_dump -U postgres postgres > backup.sql
-
-# Reset
-docker-compose -f docker-compose.dev.yml down -v
-docker-compose -f docker-compose.dev.yml up -d db
-
-# Wait for DB to be ready
-sleep 10
-
-# Restore
-docker exec -i climastat-db-1 psql -U postgres postgres < backup.sql
-
-# Start backend
-docker-compose -f docker-compose.dev.yml up -d backend
-```
-
-### Volume Backup
-
-```bash
-# Backup PostgreSQL data volume
-docker run --rm -v climastat_pgdata_dev:/data -v $(pwd):/backup ubuntu tar czf /backup/pgdata_backup.tar.gz /data
-
-# Restore volume
-docker run --rm -v climastat_pgdata_dev:/data -v $(pwd):/backup ubuntu tar xzf /backup/pgdata_backup.tar.gz -C /
 ```
 
 ---
@@ -606,306 +426,256 @@ docker run --rm -v climastat_pgdata_dev:/data -v $(pwd):/backup ubuntu tar xzf /
 
 **Error:**
 ```
-Error starting userland proxy: listen tcp4 0.0.0.0:4000: bind: address already in use
+bind: address already in use
 ```
 
 **Solution:**
 ```bash
-# Find process using port (Windows)
+# Find process (Windows)
+netstat -ano | findstr :5173
 netstat -ano | findstr :4000
 
-# Find process using port (Linux/Mac)
+# Find process (Linux/Mac)
+lsof -i :5173
 lsof -i :4000
 
-# Kill the process or change port in .env.dev
-BACKEND_PORT=5000
+# Kill or change port in .env.dev / docker-compose.dev.yml
 ```
 
 #### 2. Database Connection Failed
 
 **Error:**
 ```
-error: connect ECONNREFUSED 172.18.0.2:5432
+connect ECONNREFUSED
 ```
 
 **Solution:**
 ```bash
-# Check database health
+# Check db health
 docker-compose -f docker-compose.dev.yml ps
 
-# View database logs
+# View db logs
 docker-compose -f docker-compose.dev.yml logs db
 
-# Restart database
+# Restart db
 docker-compose -f docker-compose.dev.yml restart db
-
-# Wait for health check
-docker-compose -f docker-compose.dev.yml up -d
 ```
 
-#### 3. No Data in Database
+#### 3. Frontend Can't Connect to Backend
 
-**Symptom:** API returns empty arrays
+**Symptom:** Network errors in browser console
+
+**Solution:**
+- Verify `VITE_API_BASE=http://localhost:4000` in docker-compose
+- Check backend is running: `curl http://localhost:4000/health`
+- Check CORS configuration in backend
+
+#### 4. No Data in Dashboard
+
+**Symptom:** Empty charts and KPIs
 
 **Solution:**
 ```bash
-# Check if initial fetch completed
+# Check initial fetch completed
 docker-compose -f docker-compose.dev.yml logs backend | grep "initialFetchAll"
 
-# Manually trigger fetch for city ID 1
+# Manually trigger fetch
 curl -X POST http://localhost:4000/api/cities/1/fetch
 
 # Check database
 docker exec -it climastat-db-1 psql -U postgres -c "SELECT COUNT(*) FROM measurements_hourly;"
 ```
 
-#### 4. Containers Keep Restarting
-
-**Check logs:**
-```bash
-docker-compose -f docker-compose.dev.yml logs --tail=50
-```
-
-**Common causes:**
-- Syntax error in code (check backend logs)
-- Database not ready (increase healthcheck interval)
-- Out of memory (check `docker stats`)
-- Missing environment variables
-
-**Solution:**
-```bash
-# Full restart with rebuild
-docker-compose -f docker-compose.dev.yml down
-docker-compose -f docker-compose.dev.yml up --build
-```
-
 #### 5. Hot Reload Not Working
 
-**Symptom:** Code changes not reflected
-
-**Solution:**
+**Frontend:**
 ```bash
-# Check volume mount
-docker inspect climastat-backend-1 | grep -A 10 Mounts
-
-# Restart backend
-docker-compose -f docker-compose.dev.yml restart backend
-
-# If still not working, rebuild
-docker-compose -f docker-compose.dev.yml up -d --build backend
+docker-compose -f docker-compose.dev.yml restart frontend-dev
 ```
 
-#### 6. Disk Space Issues
-
-**Check disk usage:**
+**Backend:**
 ```bash
-# Docker disk usage
+docker-compose -f docker-compose.dev.yml restart backend
+```
+
+#### 6. Out of Disk Space
+
+```bash
+# Check Docker disk usage
 docker system df
 
-# Clean up
+# Clean up (removes unused resources)
 docker system prune -a --volumes
 ```
 
-**Warning:** This removes all unused containers, networks, images, and volumes!
+---
 
-#### 7. Materialized View Not Refreshing
+## Production Deployment (Future)
 
-**Check cron execution:**
-```bash
-docker-compose -f docker-compose.dev.yml logs backend | grep "Refreshing materialized view"
+### Not Yet Implemented
+
+The current setup is development-only. Production deployment requires:
+
+### Production Checklist
+
+- [ ] Create `docker-compose.prod.yml`
+- [ ] Create production Dockerfiles (no dev dependencies)
+- [ ] Use `node index.js` instead of nodemon
+- [ ] Use `npm run build && npm run preview` for frontend
+- [ ] Configure reverse proxy (Nginx/Caddy)
+- [ ] Use managed PostgreSQL
+- [ ] Set up SSL/TLS certificates
+- [ ] Configure secrets management
+- [ ] Implement health monitoring
+- [ ] Set up log aggregation
+- [ ] Configure automated backups
+- [ ] Implement CI/CD pipeline
+
+### Example Production Dockerfile (Backend)
+
+```dockerfile
+# backend/Dockerfile
+FROM node:18-alpine AS build
+
+WORKDIR /usr/src/app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+ENV NODE_ENV=production
+EXPOSE 4000
+
+CMD ["node", "index.js"]
 ```
 
-**Manual refresh:**
-```bash
-docker exec -it climastat-db-1 psql -U postgres -c "REFRESH MATERIALIZED VIEW CONCURRENTLY latest_measurement_per_city;"
+### Example Production Dockerfile (Frontend)
+
+```dockerfile
+# frontend/Dockerfile
+FROM node:22-alpine AS build
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/nginx.conf
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+### Example Production Docker Compose
+
+```yaml
+# docker-compose.prod.yml
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DB_SSL: "true"
+      NODE_ENV: production
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:4000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
 ```
 
 ---
 
 ## Security Considerations
 
-### Development Environment
+### Development (Current)
 
-**Current Status:**
-- ✅ Non-root user in containers
-- ✅ SQL injection prevention (parameterized queries)
-- ⚠️ Default credentials (fine for dev)
-- ⚠️ Exposed ports on host
-- ⚠️ No authentication
-- ⚠️ CORS allows all origins
+- Non-root Docker users
+- SQL injection prevention
+- CORS enabled
+- Environment variables for config
 
-### Production Recommendations
+### Production Requirements
 
-1. **Change Default Credentials:**
-```env
-POSTGRES_PASSWORD=<strong-random-password>
-```
-
-2. **Use Secrets Management:**
-- Docker secrets
-- HashiCorp Vault
-- AWS Secrets Manager
-- Azure Key Vault
-
-3. **Enable SSL/TLS:**
-```env
-DB_SSL=true
-```
-
-4. **Restrict CORS:**
-```javascript
-// backend/index.js
-app.use(cors({
-  origin: 'https://your-frontend-domain.com'
-}));
-```
-
-5. **Add Rate Limiting:**
-```bash
-npm install express-rate-limit
-```
-
-6. **Implement Authentication:**
-- JWT tokens
-- OAuth 2.0
-- API keys
-
-7. **Network Isolation:**
-```yaml
-# docker-compose.prod.yml
-networks:
-  backend:
-    internal: true  # No external access
-  frontend:
-    # External access only
-```
-
-8. **Read-only Filesystems:**
-```yaml
-services:
-  backend:
-    read_only: true
-    tmpfs:
-      - /tmp
-```
-
-9. **Resource Limits:**
-```yaml
-services:
-  backend:
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
-```
-
-10. **Regular Updates:**
-```bash
-# Update base images
-docker-compose pull
-docker-compose up -d --build
-```
-
----
-
-## Performance Optimization
-
-### Database Tuning
-
-**Edit PostgreSQL settings (production):**
-```yaml
-services:
-  db:
-    command:
-      - postgres
-      - -c
-      - shared_buffers=256MB
-      - -c
-      - max_connections=100
-      - -c
-      - work_mem=4MB
-```
-
-### Connection Pooling
-
-Already configured in `backend/db.js` using `pg.Pool`.
-
-**Tune pool size:**
-```javascript
-// backend/db.js
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 20,  // Maximum connections
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
-```
-
-### Caching (Future)
-
-Consider adding Redis:
-```yaml
-services:
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-```
-
----
-
-## Next Steps
-
-1. **Development:**
-   - Follow this guide to deploy locally
-   - Make code changes
-   - Test with provided endpoints
-   - Commit to Git
-
-2. **Production Preparation:**
-   - Create production Dockerfile
-   - Set up managed database
-   - Configure CI/CD pipeline
-   - Implement monitoring
-
-3. **Scaling:**
-   - Add load balancer
-   - Implement horizontal scaling
-   - Set up auto-scaling policies
+1. **Change default credentials**
+2. **Use secrets management** (Docker secrets, Vault)
+3. **Enable SSL/TLS**
+4. **Restrict CORS origins**
+5. **Add rate limiting**
+6. **Implement authentication**
+7. **Network isolation**
+8. **Resource limits**
+9. **Regular updates**
 
 ---
 
 ## Quick Reference
 
-**Start development environment:**
+### Start Development
+
 ```bash
-docker-compose -f docker-compose.dev.yml up -d
+docker-compose -f docker-compose.dev.yml up --build
 ```
 
-**Stop environment:**
+### Access Points
+
+- Frontend: http://localhost:5173
+- Backend: http://localhost:4000
+- Adminer: http://localhost:8080
+
+### View Logs
+
+```bash
+docker-compose -f docker-compose.dev.yml logs -f
+```
+
+### Stop Everything
+
 ```bash
 docker-compose -f docker-compose.dev.yml down
 ```
 
-**View logs:**
+### Clean Restart
+
 ```bash
-docker-compose -f docker-compose.dev.yml logs -f backend
+docker-compose -f docker-compose.dev.yml down -v
+docker-compose -f docker-compose.dev.yml up --build
 ```
 
-**Backup database:**
+### Backup Database
+
 ```bash
 docker exec climastat-db-1 pg_dump -U postgres postgres > backup.sql
 ```
 
-**Access database:**
-```bash
-docker exec -it climastat-db-1 psql -U postgres
-```
+### Test API
 
-**Test API:**
 ```bash
 curl http://localhost:4000/health
+curl http://localhost:4000/api/cities
+curl http://localhost:4000/api/cities/latest
 ```
 
 ---
@@ -913,10 +683,11 @@ curl http://localhost:4000/health
 ## Additional Resources
 
 - **Docker Documentation:** https://docs.docker.com/
-- **Docker Compose Reference:** https://docs.docker.com/compose/compose-file/
+- **Docker Compose Reference:** https://docs.docker.com/compose/
 - **PostgreSQL Docker Image:** https://hub.docker.com/_/postgres
-- **Node.js Docker Best Practices:** https://github.com/nodejs/docker-node/blob/main/docs/BestPractices.md
+- **Node.js Docker Practices:** https://github.com/nodejs/docker-node/blob/main/docs/BestPractices.md
+- **Vite Deployment:** https://vitejs.dev/guide/static-deploy.html
 
 ---
 
-*Last Updated: 2025-01-16*
+*Last Updated: 2025-11-21*
